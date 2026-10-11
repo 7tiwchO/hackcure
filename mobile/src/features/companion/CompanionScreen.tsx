@@ -21,6 +21,9 @@ interface DisplayMessage extends SakinaMessage {
   fallback?: boolean;
   crisis?: boolean;
   emergencyNumbers?: SakinaEmergencyNumber[];
+  /** Prepared supportive reply (no AI model available): a normal answer, not a failure. */
+  offlineSupport?: boolean;
+  contextLabel?: string;
 }
 
 const QUICK_REPLIES = ['companion.anxiety', 'companion.listen', 'companion.grounding'] as const;
@@ -79,14 +82,20 @@ export const CompanionScreen: React.FC = () => {
     setSendError(false);
     try {
       const result = await sakinaApi.send(history);
+      // Crisis replies keep their exact previous handling; only ordinary replies get the new labels.
+      const offlineSupport = !result.crisis && !!result.fallback && result.mode === 'offline_support';
+      const failed = result.fallback && !offlineSupport;
+      const contextLabel = result.crisis ? undefined : result.context_used?.label?.trim() || undefined;
       setMessages((current) => [...current, {
         id: uuidv4(), role: 'assistant', content: result.reply,
-        fallback: result.fallback,
+        fallback: failed,
         crisis: result.crisis,
         emergencyNumbers: result.crisis ? result.emergency_numbers : undefined,
+        offlineSupport,
+        contextLabel,
       }]);
-      setSendError(result.fallback);
-      setRetryHistory(result.fallback ? history : undefined);
+      setSendError(failed);
+      setRetryHistory(failed ? history : undefined);
     } catch {
       setMessages((current) => [...current, {
         id: uuidv4(), role: 'assistant', content: t('companion.connectionError'), fallback: true,
@@ -169,6 +178,18 @@ export const CompanionScreen: React.FC = () => {
                 borderBottomLeftRadius: own && isRTL ? 4 : radii.lg,
               }]}>
                 <Text accessibilityRole="text" style={[typography.body, { color: own ? '#FFFFFF' : colors.textPrimary, textAlign: isRTL ? 'right' : 'left' }]}>{item.content}</Text>
+                {!own && !item.crisis && !!item.contextLabel && (
+                  <View style={[styles.metaRow, { flexDirection }]}>
+                    <Ionicons name="document-text-outline" size={13} color={colors.primary} />
+                    <Text style={[typography.tiny, { color: colors.textSecondary, flex: 1, marginHorizontal: spacing.xs, textAlign: isRTL ? 'right' : 'left' }]}>{item.contextLabel}</Text>
+                  </View>
+                )}
+                {!own && !item.crisis && item.offlineSupport && (
+                  <View style={[styles.metaRow, { flexDirection }]}>
+                    <Ionicons name="leaf-outline" size={13} color={colors.textMuted} />
+                    <Text style={[typography.tiny, { color: colors.textMuted, flex: 1, marginHorizontal: spacing.xs, textAlign: isRTL ? 'right' : 'left' }]}>{t('companion.offlineSupportMode')}</Text>
+                  </View>
+                )}
                 {item.crisis && (
                   <View style={[styles.resources, { borderTopColor: colors.cardBorder }]}>
                     <Text style={[typography.captionBold, { color: colors.textPrimary, textAlign: isRTL ? 'right' : 'left' }]}>{t('companion.emergencyResources')}</Text>
@@ -210,6 +231,7 @@ const styles = StyleSheet.create({
   urgentButton: { minHeight: 42, borderWidth: 1, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   messageRow: { flexDirection: 'row', marginVertical: 5 },
   bubble: { borderWidth: 1, maxWidth: '88%', paddingVertical: 10, paddingHorizontal: 14 },
+  metaRow: { alignItems: 'center', marginTop: 6 },
   resources: { borderTopWidth: 1, marginTop: 10, paddingTop: 8, gap: 4 },
   typing: { alignItems: 'center', padding: 8 },
   quickReplies: { gap: 7, paddingVertical: 8, flexWrap: 'wrap' },

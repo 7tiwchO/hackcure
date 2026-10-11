@@ -570,3 +570,5 @@ export interface DraftDocument {
   created_at: string;
 }
 
+
+export * from './carePlan';

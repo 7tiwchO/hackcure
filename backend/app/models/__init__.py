@@ -9,4 +9,5 @@ from app.models.nutrition import NutritionPlan
 from app.models.document_source import DocumentSource, DocumentType, DocumentStatus
 from app.models.treatment_summary import TreatmentSummary
 from app.models.audit_log import AuditLog
+from app.models.hospital_link import HospitalLink, Subscription, CareProgram, AgentRun
 from app.models.companion import CompanionConversation, CompanionMessage, CompanionConsent, MoodEntry, SafetyEvent

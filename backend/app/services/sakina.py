@@ -66,6 +66,8 @@ def localized_crisis_reply(language: str, has_numbers: bool) -> str:
     return "I’m sorry you’re going through this. You deserve support right now. If you’re in immediate danger or might hurt yourself, contact emergency services and, if you can, reach out to someone you trust nearby.{contacts}".format(contacts=contacts)
 
 
-async def generate_reply(history: list[dict[str, str]]) -> str:
+async def generate_reply(history: list[dict[str, str]], patient_context: str | None = None) -> str:
     prompt = _PROMPT.read_text(encoding="utf-8")
+    if patient_context:
+        prompt += "\n\n## Patient context (synchronised hospital record — the only medical facts you may rely on)\n" + patient_context
     return await _anthropic(settings.SAKINA_MODEL, prompt, history, settings.CHAT_MAX_TOKENS)

@@ -12,6 +12,7 @@ from app.api.doctors import router as doctors_router
 from app.api.automation import router as automation_router
 from app.api.companion import router as companion_router
 from app.api.sakina import router as sakina_router
+from app.api.hospital_link import router as hospital_link_router
 
 __all__ = [
     "auth_router",
@@ -28,4 +29,5 @@ __all__ = [
     "automation_router",
     "companion_router",
     "sakina_router",
+    "hospital_link_router",
 ]

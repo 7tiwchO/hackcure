@@ -37,7 +37,7 @@ for (const filename of files) {
   function visit(node) {
     if (ts.isCallExpression(node) && node.arguments.length && ts.isStringLiteral(node.arguments[0])) {
       const key = node.arguments[0].text;
-      if (/^(common|auth|onboarding|home|treatment|medications|sport|nutrition|pharmacy|doctor|messages|appointments|medicalRecords|notifications|profile|companion|copy|validation|labels)\./.test(key)) {
+      if (/^(common|auth|onboarding|home|treatment|medications|sport|nutrition|pharmacy|doctor|messages|appointments|medicalRecords|notifications|profile|companion|copy|validation|labels|hospitalLink|program|subscription)\./.test(key)) {
         translationReferences.push({ filename, key });
       }
     }

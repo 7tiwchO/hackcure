@@ -25,8 +25,17 @@ class SakinaEmergencyNumber(BaseModel):
     number: str
 
 
+class SakinaContextUsed(BaseModel):
+    grounded: bool = False
+    label: str = ""
+    sources: list[str] = Field(default_factory=list)
+
+
 class SakinaChatResponse(BaseModel):
     reply: str = Field(min_length=1, max_length=5000)
     crisis: bool = False
     fallback: bool = False
     emergency_numbers: list[SakinaEmergencyNumber] = Field(default_factory=list)
+    # Fondé sur le dossier hospitalier synchronisé ; mode = llm | offline_support | safety
+    context_used: SakinaContextUsed | None = None
+    mode: str = "llm"

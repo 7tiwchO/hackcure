@@ -138,6 +138,18 @@ For the full environment setup, migration, n8n companion workflows, and verifica
 
 ---
 
+## 🏥 Lien avec la plateforme hospitalière (Hospital Copilot)
+
+Après son séjour, le patient lie son dossier (pseudonyme `PAT-xxxx` + date de naissance + consentement). L'application synchronise le rapport
+et l'ordonnance de sortie par l'API FHIR de l'hôpital, et le **CarePlanAgent** (dans le backend, sans n8n) en tire les rappels de médicaments
+(strictement l'ordonnance), un programme d'alimentation, d'activité et d'habitudes (brouillon validé par un médecin), puis suit l'observance.
+Sakina s'appuie sur ces données. Sans crédit d'API, tout fonctionne en mode de secours par règles.
+
+- Démarrage : `./scripts/start_with_hospital.ps1` (backend sur le port 8100, Hospital Copilot attendu sur 8000) — compte `zohra@example.com` / `Test123!@#`.
+- Démonstration : [docs/DEMO_LIEN_HOPITAL.md](docs/DEMO_LIEN_HOPITAL.md) · État réel et limites : [RAPPORT_APP.md](RAPPORT_APP.md) · Décisions : [DECISIONS_APP.md](DECISIONS_APP.md)
+
+---
+
 ## 🔑 Demo Credentials
 
 | Role | Email | Password | Details |

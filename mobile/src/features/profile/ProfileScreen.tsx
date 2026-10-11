@@ -111,6 +111,34 @@ export const ProfileScreen: React.FC = () => {
         </Card>
       </View>
 
+      {/* Hospital follow-up: link, generated program, subscription */}
+      <View style={{ marginTop: spacing.lg }}>
+        <Text style={[typography.captionBold, { color: colors.textSecondary, textAlign, marginBottom: 8 }]}>
+          {t('hospitalLink.profileSection')}
+        </Text>
+
+        <ListItem
+          title={t('hospitalLink.title')}
+          subtitle={t('hospitalLink.profileSubtitle')}
+          leftIcon={<Ionicons name="link-outline" size={22} color={colors.primary} />}
+          onPress={() => router.push('/hospital-link')}
+        />
+
+        <ListItem
+          title={t('program.title')}
+          subtitle={t('program.profileSubtitle')}
+          leftIcon={<Ionicons name="clipboard-outline" size={22} color={colors.secondary} />}
+          onPress={() => router.push('/program')}
+        />
+
+        <ListItem
+          title={t('subscription.title')}
+          subtitle={t('subscription.profileSubtitle')}
+          leftIcon={<Ionicons name="card-outline" size={22} color={colors.accent} />}
+          onPress={() => router.push('/subscription')}
+        />
+      </View>
+
       {/* App Preferences */}
       <View style={{ marginTop: spacing.lg }}>
         <Text style={[typography.captionBold, { color: colors.textSecondary, textAlign, marginBottom: 8 }]}>

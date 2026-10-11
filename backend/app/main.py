@@ -19,6 +19,7 @@ from app.api import (
     automation_router,
     companion_router,
     sakina_router,
+    hospital_link_router,
 )
 from app.websocket.manager import manager
 
@@ -27,7 +28,15 @@ async def lifespan(app: FastAPI):
     # Initialize database tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Synchronisation periodique avec Hospital Copilot (optionnelle)
+    task = None
+    if settings.HOSPITAL_SYNC_INTERVAL_MINUTES and settings.HOSPITAL_SYNC_INTERVAL_MINUTES > 0:
+        import asyncio
+        from app.services.hospital_sync import periodic_sync_loop
+        task = asyncio.create_task(periodic_sync_loop())
     yield
+    if task:
+        task.cancel()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -60,6 +69,7 @@ app.include_router(doctors_router)
 app.include_router(automation_router)
 app.include_router(companion_router)
 app.include_router(sakina_router)
+app.include_router(hospital_link_router)
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):

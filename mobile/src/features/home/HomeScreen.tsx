@@ -93,6 +93,14 @@ export const HomeScreen: React.FC = () => {
       route: '/(tabs)/treatment',
     },
     {
+      id: 'program',
+      title: t('program.title'),
+      icon: 'clipboard-outline' as const,
+      color: colors.accent,
+      bg: colors.primaryLight,
+      route: '/program',
+    },
+    {
       id: 'sport',
       title: t('home.sport'),
       icon: 'walk' as const,

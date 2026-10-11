@@ -54,6 +54,9 @@ function RootNavigation() {
       <Stack.Screen name="notifications" />
       <Stack.Screen name="settings/language" />
       <Stack.Screen name="settings/theme" />
+      <Stack.Screen name="hospital-link" />
+      <Stack.Screen name="program" />
+      <Stack.Screen name="subscription" />
     </Stack>
   );
 }

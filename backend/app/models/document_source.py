@@ -9,6 +9,7 @@ import enum
 class DocumentType(str, enum.Enum):
     DOCTOR_REPORT = "DOCTOR_REPORT"
     PRESCRIPTION = "PRESCRIPTION"
+    MEDICAL_RECORD = "MEDICAL_RECORD"  # dossier synchronise depuis l'hopital
 
 class DocumentStatus(str, enum.Enum):
     PENDING = "PENDING"
