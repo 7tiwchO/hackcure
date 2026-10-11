@@ -1,0 +1,8 @@
+Application patient reliee a Hospital Copilot - termine
+Depot : hackcure, branche feat/hospital-link-agent (commits locaux : le push est refuse, voir BLOCKERS_APP.md)
+Date : 2026-10-11
+Tests backend : 42 passes, 2 echecs anterieurs a ce travail (test_companion_safety.py)
+Mobile : npx tsc --noEmit vert ; aucun ecran vu en fonctionnement
+Hospital Copilot : 270 tests passes, commit beae298 pousse sur feat/v2
+Essai reel de bout en bout : fait contre Hospital Copilot sur le port 8010 (pas 8000)
+Bilan : RAPPORT_APP.md ; demo : docs/DEMO_LIEN_HOPITAL.md
