@@ -1,5 +1,5 @@
 Application patient reliee a Hospital Copilot - termine
-Depot : hackcure, branche feat/hospital-link-agent (commits locaux : le push est refuse, voir BLOCKERS_APP.md)
+Depot : hackcure, branche feat/hospital-link-agent (poussee sur origin)
 Date : 2026-10-11
 Tests backend : 42 passes, 2 echecs anterieurs a ce travail (test_companion_safety.py)
 Mobile : npx tsc --noEmit vert ; aucun ecran vu en fonctionnement
