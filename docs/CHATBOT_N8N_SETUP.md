@@ -2,7 +2,7 @@
 
 ## What this workflow does
 
-`n8n/chatbot-psychologique.workflow.json` is an inactive, importable n8n workflow. The authenticated mobile client calls only FastAPI. FastAPI checks patient role, conversation ownership, consent, rate limits, and safety triage before it calls the n8n webhook. The workflow validates the shared secret and request limits, fetches a patient/session-scoped minimized context from the backend, performs a second safety/scope triage, returns a calm safety or off-topic response when needed, and otherwise generates the reply. Recent turns and the rolling summary come from backend storage. The LLM receives no patient name, database ID, address, phone, or context token.
+`n8n/chatbot-psychologique.workflow.json` is an inactive, importable n8n workflow. The authenticated mobile client calls FastAPI. The persistent `/api/v1/chat/messages` route checks consent and stores conversation history in the backend; the Sakina screen's `/api/chat` route keeps history in mobile memory and does not store its transcript. When both `CHAT_N8N_CHAT_WEBHOOK_URL` and `CHAT_N8N_SHARED_SECRET` are configured, FastAPI sends the complete bounded transcript (up to 40 messages) through this n8n webhook. The workflow validates the secret and request limits, fetches patient/session-scoped minimized context from the backend, performs safety/scope triage, returns a safety or off-topic response when needed, and otherwise generates the reply. The LLM receives no patient name, address, phone, or context token.
 
 For general current health/wellbeing questions, triage may create a search query. The query is scrubbed of email, phone, and UUID patterns and sent to Tavily with source domains restricted to WHO, NHS, Mayo Clinic, and Tunisia's health ministry. Search results are untrusted input; the system prompt directs the model to cite used source links and ignore instructions found in pages. Leave `TAVILY_API_KEY` unset to disable search.
 
@@ -16,13 +16,13 @@ For general current health/wellbeing questions, triage may create a search query
    | `HACKCURE_CHAT_SHARED_SECRET` | The same high-entropy secret as backend `CHAT_N8N_SHARED_SECRET` |
    | `HACKCURE_API_URL` | Backend base URL reachable *from n8n*; in a Docker container on Windows use `http://host.docker.internal:8000` |
    | `HACKCURE_ANTHROPIC_API_KEY` | Anthropic API key, stored only in n8n environment/secret manager |
-   | `CHAT_MODEL` | `claude-sonnet-5` by default |
-   | `TRIAGE_MODEL` | `claude-haiku-4-5-20251001` by default |
+   | `CHAT_MODEL` | `claude-sonnet-5-5` by default |
+   | `TRIAGE_MODEL` | `claude-haiku-5-5` by default |
    | `TAVILY_API_KEY` | Optional Tavily key; omit to disable web search |
 
 3. The workflow reads environment variables in n8n expressions. On self-hosted n8n versions that block expression access to environment variables, enable `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`, protect the n8n host and workflow editors, and keep workflow execution data retention disabled. If your n8n version disallows this setting, replace environment expressions with n8n credentials/variables before activating.
-4. In `backend/.env`, set `CHAT_N8N_CHAT_WEBHOOK_URL=http://localhost:5678/webhook/hackcure-companion-chat`, `CHAT_N8N_SHARED_SECRET` to the same secret, and `CHAT_N8N_WEBHOOK_BASE_URL=http://localhost:5678` for crisis/escalation/daily/weekly workflows. Restart FastAPI after changing environment values. When n8n is not configured, direct backend Anthropic replies remain available.
-5. Set a separate random `CHAT_DIAGNOSTIC_TOKEN` in `backend/.env` to protect `GET /api/v1/chat/health`. The endpoint calls `/webhook/hackcure-companion-health` with the shared-secret header and probes Anthropic's model-list endpoint without sending patient text.
+4. In `backend/.env`, set `CHAT_N8N_CHAT_WEBHOOK_URL=http://localhost:5678/webhook/hackcure-companion-chat`, `CHAT_N8N_SHARED_SECRET` to the same secret, and `CHAT_N8N_WEBHOOK_BASE_URL=http://localhost:5678` for the health/escalation/daily/weekly webhooks. Restart FastAPI after changing environment values. If n8n is intentionally not used, set `ANTHROPIC_API_KEY` in `backend/.env` for direct backend replies.
+5. Set a separate random `CHAT_DIAGNOSTIC_TOKEN` in `backend/.env` to protect `GET /api/v1/chat/health`. The endpoint calls `/webhook/hackcure-companion-health` with the shared-secret header and probes the backend's Anthropic model-list endpoint without sending patient text. This does not prove that the separate chat workflow is active or that the Anthropic key stored in n8n is valid; confirm those with a synthetic live chat request.
 6. Verify the workflow's `Save successful executions`, `Save failed executions`, and progress/execution data retention are disabled globally as well as in the workflow. Do not use manual test executions with real patient content.
 7. Import the escalation, daily check-in, and weekly-summary workflows separately. Configure their existing destination variables as described in `n8n/SETUP_GUIDE.md`. Keep those schedules inactive until a clinician/care-team destination has been reviewed and consent behavior tested.
 
