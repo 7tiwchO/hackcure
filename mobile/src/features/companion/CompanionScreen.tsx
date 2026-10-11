@@ -58,6 +58,7 @@ export const CompanionScreen: React.FC = () => {
   const [text, setText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState(false);
+  const [sendErrorCode, setSendErrorCode] = useState<string | null>(null);
   const [crisisActive, setCrisisActive] = useState(false);
   const [retryHistory, setRetryHistory] = useState<SakinaMessage[] | undefined>(undefined);
   const listRef = useRef<FlatList<DisplayMessage> | null>(null);
@@ -86,6 +87,7 @@ export const CompanionScreen: React.FC = () => {
         emergencyNumbers: result.crisis ? result.emergency_numbers : undefined,
       }]);
       setSendError(result.fallback);
+      setSendErrorCode(result.error_code ?? null);
       setRetryHistory(result.fallback ? history : undefined);
     } catch {
       setMessages((current) => [...current, {
@@ -93,6 +95,7 @@ export const CompanionScreen: React.FC = () => {
       }]);
       setRetryHistory(history);
       setSendError(true);
+      setSendErrorCode('NETWORK_ERROR');
     } finally {
       setIsSending(false);
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
@@ -109,6 +112,7 @@ export const CompanionScreen: React.FC = () => {
     setMessages((current) => [...current, userMessage]);
     setText('');
     setSendError(false);
+    setSendErrorCode(null);
 
     if (containsCrisisKeyword(content)) {
       setCrisisActive(true);
@@ -191,7 +195,7 @@ export const CompanionScreen: React.FC = () => {
       </View>
       {sendError && (
         <View style={[styles.retryNotice, { flexDirection, borderColor: colors.warning, borderRadius: radii.md }]}>
-          <Text accessibilityRole="alert" style={[typography.caption, { flex: 1, color: colors.warning, textAlign: isRTL ? 'right' : 'left' }]}>{t('companion.connectionUnstable')}</Text>
+          <Text accessibilityRole="alert" style={[typography.caption, { flex: 1, color: colors.warning, textAlign: isRTL ? 'right' : 'left' }]}>{t(`companion.error.${sendErrorCode ?? 'CHAT_UPSTREAM_UNAVAILABLE'}`, { defaultValue: t('companion.connectionUnstable') })}</Text>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('companion.retrySend')} disabled={isSending || !isOnline || !retryHistory} onPress={() => retryHistory && void retry(retryHistory)}>
             <Text style={[typography.captionBold, { color: colors.primary }]}>{t('companion.retrySend')}</Text>
           </TouchableOpacity>

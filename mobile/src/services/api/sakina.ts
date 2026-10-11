@@ -14,6 +14,8 @@ export interface SakinaReply {
   reply: string;
   crisis: boolean;
   fallback: boolean;
+  error_code?: string | null;
+  triage_label?: string | null;
   emergency_numbers: SakinaEmergencyNumber[];
 }
 

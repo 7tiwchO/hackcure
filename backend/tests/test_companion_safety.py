@@ -8,9 +8,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.companion import send_message
+from app.api.sakina import chat_with_sakina
 from app.models.user import UserRole
 from app.schemas.companion import MessageCreate
 from app.schemas.companion import ConversationResponse
+from app.schemas.sakina import SakinaChatMessage, SakinaChatRequest
 from app.services import companion
 
 
@@ -57,7 +59,7 @@ def test_companion_provider_failure_returns_localized_retryable_fallback(monkeyp
     english = asyncio.run(companion.ask_companion_with_status("", "", [], "hello", "en"))
     french = asyncio.run(companion.ask_companion_with_status("", "", [], "bonjour", "fr"))
     assert english[1:] == (True, "CHAT_UPSTREAM_UNAVAILABLE")
-    assert "réessayez" in french[0].lower()
+    assert "réessayer" in french[0].lower()
     assert french[1:] == (True, "CHAT_UPSTREAM_UNAVAILABLE")
 
 
@@ -127,7 +129,13 @@ def test_triage_risk_bypasses_normal_companion_reply(monkeypatch):
 
     db = Mock()
     db.execute = AsyncMock(side_effect=[Result(patient), Result(consent), Result(ids=[])])
-    db.flush = AsyncMock()
+    async def flush_assigns_database_uuid():
+        conversation = next(
+            call.args[0] for call in db.add.call_args_list
+            if type(call.args[0]).__name__ == "CompanionConversation"
+        )
+        conversation.id = uuid4()
+    db.flush = AsyncMock(side_effect=flush_assigns_database_uuid)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     db.add = Mock()
@@ -267,3 +275,90 @@ def test_n8n_chat_payload_is_minimized_and_carries_scoped_context_token(monkeypa
     assert "River Road" not in str(payload)
     assert "+33123456789" not in str(payload)
     assert captured["headers"]["X-HackCure-Secret"] == "test-shared-secret"
+
+
+def test_sakina_uses_configured_n8n_workflow_and_returns_live_contract(monkeypatch):
+    import asyncio
+    from app.services import sakina
+
+    monkeypatch.setattr(companion.settings, "CHAT_N8N_CHAT_WEBHOOK_URL", "http://n8n.test/webhook/hackcure-companion-chat")
+    monkeypatch.setattr(companion.settings, "CHAT_N8N_SHARED_SECRET", "test-shared-secret")
+    patient_id, session_id = str(uuid4()), str(uuid4())
+    patient = SimpleNamespace(first_name="Alex", last_name="Example", address="12 River Road", emergency_contact_phone=None)
+    captured = {}
+
+    class Response:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"reply": "Je suis là avec vous. Qu’est-ce qui vous pèse le plus ?", "triage_label": "distress", "language": "fr"}
+
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return None
+        async def post(self, url, headers, json):
+            captured.update(url=url, headers=headers, payload=json)
+            return Response()
+
+    monkeypatch.setattr(sakina.httpx, "AsyncClient", Client)
+    history = [{"role": "assistant", "content": "Bonjour, je suis Sakina."}]
+    for turn in range(14):
+        history.extend([
+            {"role": "user", "content": f"Tour de conversation synthétique {turn + 1}."},
+            {"role": "assistant", "content": f"Réponse synthétique {turn + 1}."},
+        ])
+    history.append({"role": "user", "content": "Je me sens anxieux, je suis Alex Example."})
+    result = asyncio.run(sakina.generate_reply(history, patient, patient_id, session_id, "fr"))
+    assert result == ("Je suis là avec vous. Qu’est-ce qui vous pèse le plus ?", False, None, "distress")
+    assert captured["headers"]["X-HackCure-Secret"] == "test-shared-secret"
+    assert captured["payload"]["patient_id"] == patient_id
+    assert captured["payload"]["session_id"] == session_id
+    assert captured["payload"]["context_token"] == companion.context_access_token(patient_id, session_id)
+    assert len(captured["payload"]["history"]) == len(history) - 1
+    assert captured["payload"]["history"][0]["content"] == "Bonjour, je suis Sakina."
+    assert captured["payload"]["message"].startswith("Je me sens anxieux")
+    assert "Alex" not in str(captured["payload"])
+    assert "Example" not in str(captured["payload"])
+
+
+def test_sakina_marks_missing_anthropic_configuration_as_fallback(monkeypatch):
+    import asyncio
+    from app.services import sakina
+
+    monkeypatch.setattr(companion.settings, "CHAT_N8N_CHAT_WEBHOOK_URL", "")
+    monkeypatch.setattr(companion.settings, "CHAT_N8N_SHARED_SECRET", "")
+    monkeypatch.setattr(companion.settings, "ANTHROPIC_API_KEY", "")
+    reply, fallback, error_code, triage_label = asyncio.run(sakina.generate_reply([{"role": "user", "content": "bonjour"}]))
+    assert reply == ""
+    assert fallback is True
+    assert error_code == "CHAT_PROVIDER_NOT_CONFIGURED"
+    assert triage_label is None
+
+
+def test_sakina_endpoint_surfaces_missing_provider_without_storing_history(monkeypatch):
+    import asyncio
+    import app.api.sakina as sakina_api
+
+    patient = SimpleNamespace(id=uuid4())
+    current_user = SimpleNamespace(id=uuid4(), role=UserRole.PATIENT, language="fr")
+
+    class Result:
+        def scalar_one_or_none(self): return patient
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=Result())
+    monkeypatch.setattr(sakina_api, "rate_limit_allows", lambda _: True)
+    monkeypatch.setattr(sakina_api.settings, "CHAT_N8N_CHAT_WEBHOOK_URL", "")
+    monkeypatch.setattr(sakina_api.settings, "CHAT_N8N_SHARED_SECRET", "")
+    monkeypatch.setattr(sakina_api.settings, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(sakina_api, "triage", AsyncMock(return_value=("distress", "keyword_fallback")))
+    monkeypatch.setattr(sakina_api, "generate_reply", AsyncMock(return_value=("", True, "CHAT_PROVIDER_NOT_CONFIGURED", None)))
+
+    payload = SakinaChatRequest(history=[SakinaChatMessage(role="user", content="Bonjour")])
+    response = asyncio.run(chat_with_sakina(payload, current_user, db))
+    assert response.fallback is True
+    assert response.error_code == "CHAT_PROVIDER_NOT_CONFIGURED"
+    assert response.triage_label == "distress"
+    assert "connexion" in response.reply.lower()
+    db.add.assert_not_called()
+    db.commit.assert_not_called()

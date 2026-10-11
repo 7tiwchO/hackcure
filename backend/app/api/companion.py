@@ -45,19 +45,45 @@ async def chat_health(x_chat_diagnostics_token: str = Header(default="")):
     if not expected or not hmac.compare_digest(x_chat_diagnostics_token, expected):
         raise HTTPException(status_code=403, detail="Invalid diagnostics token")
 
-    n8n = {"reachable": False, "workflow_active": False, "secret_accepted": False}
-    if settings.CHAT_N8N_WEBHOOK_BASE_URL and settings.CHAT_N8N_SHARED_SECRET:
+    chat_uses_n8n = bool(settings.CHAT_N8N_CHAT_WEBHOOK_URL and settings.CHAT_N8N_SHARED_SECRET)
+    n8n = {
+        "reachable": False,
+        "health_workflow_active": False,
+        "workflow_active": False,
+        "chat_workflow_active": None,
+        "secret_accepted": False,
+        "configured": bool(settings.CHAT_N8N_CHAT_WEBHOOK_URL and settings.CHAT_N8N_SHARED_SECRET),
+        "reason": None,
+    }
+    health_base_url = settings.CHAT_N8N_WEBHOOK_BASE_URL
+    if not health_base_url and settings.CHAT_N8N_CHAT_WEBHOOK_URL:
+        from urllib.parse import urlsplit, urlunsplit
+
+        parsed = urlsplit(settings.CHAT_N8N_CHAT_WEBHOOK_URL)
+        if parsed.scheme and parsed.netloc:
+            health_base_url = urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+    if health_base_url and settings.CHAT_N8N_SHARED_SECRET:
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 response = await client.get(
-                    settings.CHAT_N8N_WEBHOOK_BASE_URL.rstrip("/") + "/webhook/hackcure-companion-health",
+                    health_base_url.rstrip("/") + "/webhook/hackcure-companion-health",
                     headers={"X-HackCure-Secret": settings.CHAT_N8N_SHARED_SECRET},
                 )
             n8n["reachable"] = True
-            n8n["workflow_active"] = response.status_code == 200
+            n8n["health_workflow_active"] = response.status_code == 200
+            n8n["workflow_active"] = n8n["health_workflow_active"]
+            # The health and chat webhooks are nodes in the same imported workflow.
+            n8n["chat_workflow_active"] = n8n["health_workflow_active"]
             n8n["secret_accepted"] = response.status_code == 200 and response.json().get("ok") is True
+            if response.status_code != 200:
+                n8n["reason"] = f"Health webhook returned HTTP {response.status_code}"
         except (httpx.HTTPError, ValueError, TypeError) as exc:
+            n8n["reason"] = f"Health probe failed: {type(exc).__name__}"
             logger.warning("chat health probe failed step=n8n-health category=%s", type(exc).__name__)
+    elif not settings.CHAT_N8N_SHARED_SECRET:
+        n8n["reason"] = "CHAT_N8N_SHARED_SECRET is not configured"
+    else:
+        n8n["reason"] = "CHAT_N8N_CHAT_WEBHOOK_URL is not configured"
     anthropic = {"configured": bool(settings.ANTHROPIC_API_KEY), "reachable": False}
     if settings.ANTHROPIC_API_KEY:
         try:
@@ -68,13 +94,27 @@ async def chat_health(x_chat_diagnostics_token: str = Header(default="")):
                 )
             anthropic["reachable"] = response.is_success
             anthropic["status_code"] = response.status_code
+            if not response.is_success:
+                anthropic["reason"] = f"Anthropic returned HTTP {response.status_code}"
         except httpx.HTTPError as exc:
             logger.warning("chat health probe failed step=anthropic-health category=%s", type(exc).__name__)
+            anthropic["reason"] = f"Anthropic health probe failed: {type(exc).__name__}"
+    else:
+        anthropic["reason"] = "ANTHROPIC_API_KEY is not configured in the backend environment"
+    active_route_ready = anthropic["reachable"] if not chat_uses_n8n else False
+    readiness_reason = (
+        "The n8n health webhook cannot confirm the chat workflow activation or its Anthropic credential; run a synthetic chat request."
+        if chat_uses_n8n
+        else anthropic.get("reason")
+    )
     return {
         "backend": {"reachable": True},
+        "timeouts": {"backend_chat_seconds": settings.CHAT_TIMEOUT_SECONDS, "sakina_mobile_seconds": 70},
+        "sakina_route": "n8n" if chat_uses_n8n else "anthropic",
         "n8n": n8n,
         "anthropic": anthropic,
-        "chat_ready": anthropic["reachable"] or n8n["secret_accepted"],
+        "chat_ready": active_route_ready,
+        "chat_readiness_reason": readiness_reason,
     }
 
 

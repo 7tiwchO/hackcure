@@ -1,8 +1,11 @@
+import logging
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base
+from app.config import settings
 import app.models  # Ensure all SQLAlchemy models are registered
 from app.api import (
     auth_router,
@@ -22,8 +25,16 @@ from app.api import (
 )
 from app.websocket.manager import manager
 
+logger = logging.getLogger(__name__)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.ANTHROPIC_API_KEY:
+        logger.warning("Sakina direct provider is not configured: ANTHROPIC_API_KEY is missing")
+    if not settings.CHAT_N8N_CHAT_WEBHOOK_URL:
+        logger.warning("Sakina n8n route is not configured: CHAT_N8N_CHAT_WEBHOOK_URL is missing")
+    if settings.CHAT_N8N_CHAT_WEBHOOK_URL and not settings.CHAT_N8N_SHARED_SECRET:
+        logger.warning("Sakina n8n route is incomplete: CHAT_N8N_SHARED_SECRET is missing")
     # Initialize database tables on startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

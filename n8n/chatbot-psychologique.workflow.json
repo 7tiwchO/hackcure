@@ -43,13 +43,13 @@
             {
               "id": "cfg-chat-model",
               "name": "chat_model",
-              "value": "={{ $env.CHAT_MODEL || 'claude-sonnet-5' }}",
+              "value": "={{ $env.CHAT_MODEL || 'claude-sonnet-5-5' }}",
               "type": "string"
             },
             {
               "id": "cfg-triage-model",
               "name": "triage_model",
-              "value": "={{ $env.TRIAGE_MODEL || 'claude-haiku-4-5-20251001' }}",
+              "value": "={{ $env.TRIAGE_MODEL || 'claude-haiku-5-5' }}",
               "type": "string"
             },
             {
@@ -75,7 +75,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const item = $input.first().json;\nconst body = item.body || item;\nconst headers = item.headers || {};\nconst config = $('Load service configuration').first().json;\nconst supplied = String(headers['x-hackcure-secret'] || headers['X-HackCure-Secret'] || '');\nif (!config.shared_secret || supplied !== config.shared_secret) throw new Error('Unauthorized webhook request');\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (!uuid.test(String(body.patient_id || '')) || !uuid.test(String(body.session_id || ''))) throw new Error('Invalid patient/session reference');\nif (typeof body.message !== 'string' || !body.message.trim() || body.message.length > 2000) throw new Error('Invalid message');\nif (typeof body.context_token !== 'string' || !/^[0-9a-f]{64}$/i.test(body.context_token)) throw new Error('Invalid context authorization');\nconst history = Array.isArray(body.history) ? body.history.slice(-12).filter(x => x && ['user','assistant'].includes(x.role) && typeof x.content === 'string').map(x => ({role:x.role, content:x.content.slice(0,2000)})) : [];\nconst numbers = Array.isArray(body.emergency_numbers) ? body.emergency_numbers.filter(x => x && typeof x.label === 'string' && typeof x.number === 'string').map(x => ({label:x.label.slice(0,50), number:x.number.slice(0,24)})) : [];\nreturn [{json:{patient_id:body.patient_id, session_id:body.session_id, context_token:body.context_token, message:body.message.trim(), language:String(body.language || 'fr').slice(0,12), history, rolling_summary:String(body.rolling_summary || '').slice(0,1600), system_prompt:String(body.system_prompt || '').slice(0,20000), emergency_numbers:numbers}}];"
+        "jsCode": "const item = $input.first().json;\nconst body = item.body || item;\nconst headers = item.headers || {};\nconst config = $('Load service configuration').first().json;\nconst supplied = String(headers['x-hackcure-secret'] || headers['X-HackCure-Secret'] || '');\nif (!config.shared_secret || supplied !== config.shared_secret) throw new Error('Unauthorized webhook request');\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (!uuid.test(String(body.patient_id || '')) || !uuid.test(String(body.session_id || ''))) throw new Error('Invalid patient/session reference');\nif (typeof body.message !== 'string' || !body.message.trim() || body.message.length > 4000) throw new Error('Invalid message');\nif (typeof body.context_token !== 'string' || !/^[0-9a-f]{64}$/i.test(body.context_token)) throw new Error('Invalid context authorization');\nconst history = Array.isArray(body.history) ? body.history.slice(-39).filter(x => x && ['user','assistant'].includes(x.role) && typeof x.content === 'string').map(x => ({role:x.role, content:x.content.slice(0,4000)})) : [];\nconst numbers = Array.isArray(body.emergency_numbers) ? body.emergency_numbers.filter(x => x && typeof x.label === 'string' && typeof x.number === 'string').map(x => ({label:x.label.slice(0,50), number:x.number.slice(0,24)})) : [];\nreturn [{json:{patient_id:body.patient_id, session_id:body.session_id, context_token:body.context_token, message:body.message.trim(), language:String(body.language || 'fr').slice(0,12), history, rolling_summary:String(body.rolling_summary || '').slice(0,1600), system_prompt:String(body.system_prompt || '').slice(0,20000), emergency_numbers:numbers}}];"
       },
       "id": "hackcure-chat-validate",
       "name": "Validate and minimize request",

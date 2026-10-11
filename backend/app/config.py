@@ -12,9 +12,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["*"]
     AUTOMATION_API_KEY: str = "hackcure-automation-dev-key-2026"
     ANTHROPIC_API_KEY: str = ""
-    CHAT_MODEL: str = "claude-sonnet-5"
+    CHAT_MODEL: str = "claude-sonnet-5-5"
     SAKINA_MODEL: str = "claude-sonnet-4-6"
-    TRIAGE_MODEL: str = "claude-haiku-4-5-20251001"
+    TRIAGE_MODEL: str = "claude-haiku-5-5"
     CHAT_MAX_TOKENS: int = 700
     CHAT_TIMEOUT_SECONDS: float = 45.0
     CHAT_RATE_LIMIT_PER_MINUTE: int = 12

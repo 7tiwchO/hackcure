@@ -29,4 +29,6 @@ class SakinaChatResponse(BaseModel):
     reply: str = Field(min_length=1, max_length=5000)
     crisis: bool = False
     fallback: bool = False
+    error_code: str | None = None
+    triage_label: str | None = None
     emergency_numbers: list[SakinaEmergencyNumber] = Field(default_factory=list)

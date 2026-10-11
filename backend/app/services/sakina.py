@@ -1,12 +1,24 @@
 import json
+import logging
 import re
 from pathlib import Path
+from time import monotonic
+from typing import Any
+
+import httpx
 
 from app.config import settings
-from app.services.companion import _anthropic
+from app.services.companion import (
+    _anthropic,
+    _n8n_chat_response,
+    _redact_direct_identifiers,
+    context_access_token,
+    emergency_numbers,
+)
 
 _PROMPT = Path(__file__).resolve().parents[1] / "prompts" / "sakina_system.md"
 _CONTACTS = Path(__file__).resolve().parents[1] / "safety" / "emergency_contacts.json"
+_LOGGER = logging.getLogger(__name__)
 
 _CRISIS_TERMS = (
     # English
@@ -66,6 +78,86 @@ def localized_crisis_reply(language: str, has_numbers: bool) -> str:
     return "I’m sorry you’re going through this. You deserve support right now. If you’re in immediate danger or might hurt yourself, contact emergency services and, if you can, reach out to someone you trust nearby.{contacts}".format(contacts=contacts)
 
 
-async def generate_reply(history: list[dict[str, str]]) -> str:
+async def generate_reply(
+    history: list[dict[str, str]],
+    patient: Any | None = None,
+    patient_id: str | None = None,
+    session_id: str | None = None,
+    language: str = "en",
+) -> tuple[str, bool, str | None, str | None]:
     prompt = _PROMPT.read_text(encoding="utf-8")
-    return await _anthropic(settings.SAKINA_MODEL, prompt, history, settings.CHAT_MAX_TOKENS)
+    safe_history = [
+        {"role": message["role"], "content": _redact_direct_identifiers(message["content"], patient)}
+        for message in history
+    ]
+    started = monotonic()
+
+    if settings.CHAT_N8N_CHAT_WEBHOOK_URL and settings.CHAT_N8N_SHARED_SECRET:
+        if not patient_id or not session_id:
+            return "", True, "CHAT_PATIENT_CONTEXT_UNAVAILABLE", None
+        try:
+            async with httpx.AsyncClient(timeout=settings.CHAT_TIMEOUT_SECONDS) as client:
+                response = await client.post(
+                    settings.CHAT_N8N_CHAT_WEBHOOK_URL,
+                    headers={"X-HackCure-Secret": settings.CHAT_N8N_SHARED_SECRET},
+                    json={
+                        "patient_id": patient_id,
+                        "session_id": session_id,
+                        "context_token": context_access_token(patient_id, session_id),
+                        "message": safe_history[-1]["content"],
+                        "language": language,
+                        "history": safe_history[:-1],
+                        "rolling_summary": "",
+                        "system_prompt": prompt,
+                        "emergency_numbers": emergency_numbers(),
+                    },
+                )
+            response.raise_for_status()
+            upstream = _n8n_chat_response(response.json())
+            return upstream.reply, upstream.fallback, upstream.error_code, upstream.triage_label
+        except Exception as exc:
+            status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+            _LOGGER.warning(
+                "sakina upstream failure step=n8n category=%s status=%s duration_ms=%s",
+                type(exc).__name__,
+                status,
+                int((monotonic() - started) * 1000),
+            )
+            if isinstance(exc, httpx.TimeoutException):
+                code = "CHAT_N8N_TIMEOUT"
+            elif status in {401, 403}:
+                code = "CHAT_N8N_AUTH_FAILED"
+            elif status == 404:
+                code = "CHAT_N8N_WEBHOOK_INACTIVE"
+            elif status:
+                code = "CHAT_N8N_WORKFLOW_FAILED"
+            elif isinstance(exc, (ValueError, TypeError)):
+                code = "CHAT_N8N_INVALID_RESPONSE"
+            else:
+                code = "CHAT_N8N_UNAVAILABLE"
+            return "", True, code, None
+
+    try:
+        reply = await _anthropic(settings.SAKINA_MODEL, prompt, safe_history, settings.CHAT_MAX_TOKENS)
+        return reply, False, None, None
+    except Exception as exc:
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        _LOGGER.warning(
+            "sakina upstream failure step=anthropic category=%s status=%s duration_ms=%s",
+            type(exc).__name__,
+            status,
+            int((monotonic() - started) * 1000),
+        )
+        if not settings.ANTHROPIC_API_KEY:
+            code = "CHAT_PROVIDER_NOT_CONFIGURED"
+        elif isinstance(exc, httpx.TimeoutException):
+            code = "CHAT_PROVIDER_TIMEOUT"
+        elif status == 401 or status == 403:
+            code = "CHAT_PROVIDER_AUTH_FAILED"
+        elif status == 404:
+            code = "CHAT_MODEL_NOT_FOUND"
+        elif status == 429:
+            code = "CHAT_PROVIDER_RATE_LIMITED"
+        else:
+            code = "CHAT_PROVIDER_UNAVAILABLE"
+        return "", True, code, None
