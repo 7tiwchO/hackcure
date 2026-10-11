@@ -218,6 +218,9 @@ export interface PrescriptionItem {
   doctor_notes?: string;
   quantity_prescribed?: number;
   refills_remaining?: number;
+  stock_remaining?: number | null;
+  stock_reminder_enabled?: boolean;
+  stock_reminder_threshold?: number;
   created_at: string;
 }
 
@@ -341,7 +344,10 @@ export interface PharmacyInventory {
 
 export interface MedicineAvailability {
   pharmacy: Pharmacy;
-  inventory: PharmacyInventory;
+  is_available: boolean;
+  quantity?: number | null;
+  price?: number | null;
+  last_updated: string;
 }
 
 // --- Conversation & Messages ---

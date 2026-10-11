@@ -17,7 +17,14 @@ const getDevApiUrl = () => {
   return 'http://localhost:8000';
 };
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || getDevApiUrl();
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
+const configuredUrlIsLoopback = !!configuredApiUrl && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configuredApiUrl);
+
+// A loopback URL is correct for web and the iOS simulator, but on a physical
+// phone it points back to the phone. Resolve it to the Expo host on native.
+export const API_BASE_URL = configuredApiUrl && !(Platform.OS !== 'web' && configuredUrlIsLoopback)
+  ? configuredApiUrl
+  : getDevApiUrl();
 export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 export const STORAGE_KEYS = {

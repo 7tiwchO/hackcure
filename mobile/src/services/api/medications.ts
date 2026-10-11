@@ -12,6 +12,14 @@ export const medicationsApi = {
     return response.data;
   },
 
+  updateStock: async (
+    id: string,
+    values: Pick<PrescriptionItem, 'stock_remaining' | 'stock_reminder_enabled' | 'stock_reminder_threshold'>
+  ): Promise<PrescriptionItem> => {
+    const response = await apiClient.put<PrescriptionItem>(`/api/v1/patients/me/medications/${id}/stock`, values);
+    return response.data;
+  },
+
   getTodayDoses: async (): Promise<MedicationDose[]> => {
     const response = await apiClient.get<MedicationDose[]>('/api/v1/patients/me/doses/today');
     return response.data;

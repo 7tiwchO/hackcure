@@ -24,7 +24,7 @@ from app.models.document_source import DocumentSource, DocumentStatus
 from app.schemas.patient import PatientResponse, PatientUpdate
 from app.schemas.doctor import DoctorResponse
 from app.schemas.prescription import PrescriptionResponse
-from app.schemas.medication import PrescriptionItemResponse
+from app.schemas.medication import PrescriptionItemResponse, MedicationStockUpdate
 from app.schemas.dose import DoseResponse
 from app.schemas.sport import SportPlanResponse, SportActivityResponse
 from app.schemas.nutrition import NutritionPlanResponse
@@ -181,6 +181,35 @@ async def get_patient_medication_detail(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Medication not found")
+    return item
+
+@router.put("/me/medications/{item_id}/stock", response_model=PrescriptionItemResponse)
+async def update_patient_medication_stock(
+    item_id: uuid.UUID,
+    payload: MedicationStockUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    patient = await get_patient_by_user(current_user, db)
+    result = await db.execute(
+        select(PrescriptionItem)
+        .join(Prescription, PrescriptionItem.prescription_id == Prescription.id)
+        .where(
+            and_(
+                PrescriptionItem.id == item_id,
+                Prescription.patient_id == patient.id,
+                Prescription.status == PrescriptionStatus.ACTIVE,
+            )
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    item.stock_remaining = payload.stock_remaining
+    item.stock_reminder_enabled = payload.stock_reminder_enabled
+    item.stock_reminder_threshold = payload.stock_reminder_threshold
+    await db.commit()
+    await db.refresh(item)
     return item
 
 @router.get("/me/doses/today", response_model=List[DoseResponse])

@@ -36,6 +36,9 @@ class PrescriptionItem(Base):
     doctor_notes = Column(Text, nullable=True)
     quantity_prescribed = Column(Integer, nullable=True)
     refills_remaining = Column(Integer, nullable=True)
+    stock_remaining = Column(Integer, nullable=True)
+    stock_reminder_enabled = Column(Boolean, nullable=False, default=False)
+    stock_reminder_threshold = Column(Integer, nullable=False, default=10)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

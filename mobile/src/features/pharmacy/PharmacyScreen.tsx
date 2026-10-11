@@ -73,7 +73,7 @@ const MedicineStockItem: React.FC<MedicineStockItemProps> = ({ med, lat, lng }) 
             <View key={index} style={{ marginBottom: spacing.xs }}>
               <PharmacyCard
                 pharmacy={avail.pharmacy}
-                inventory={avail.inventory}
+                availability={avail}
               />
             </View>
           ))}

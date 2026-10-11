@@ -15,7 +15,7 @@ import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { Header } from '../../components/layout/Header';
 import { TabBar } from '../../components/ui/TabBar';
 import { PrescriptionCard } from '../../components/cards/PrescriptionCard';
-import { MedicationCard } from '../../components/cards/MedicationCard';
+import { MedicationTrackerCard } from './MedicationTrackerCard';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { CardSkeleton } from '../../components/ui/LoadingSkeleton';
 import { ErrorState } from '../../components/ui/ErrorState';
@@ -52,6 +52,11 @@ export const TreatmentScreen: React.FC = () => {
   } = useQuery({
     queryKey: ['treatmentSummary'],
     queryFn: patientApi.getTreatmentSummary,
+  });
+
+  const { data: recentDoses } = useQuery({
+    queryKey: ['doseHistory', 7],
+    queryFn: () => medicationsApi.getDoseHistory(7),
   });
 
   // Pending automation drafts (from n8n extraction)
@@ -343,10 +348,11 @@ export const TreatmentScreen: React.FC = () => {
             </View>
 
             {activePrescription.items?.map((item) => (
-              <MedicationCard
+              <MedicationTrackerCard
                 key={item.id}
                 medication={item}
-                onPress={() => router.push(`/treatment/medication/${item.id}` as any)}
+                doses={recentDoses || []}
+                onPressMedication={() => router.push(`/treatment/medication/${item.id}` as any)}
               />
             ))}
           </View>

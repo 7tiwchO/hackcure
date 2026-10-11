@@ -3,7 +3,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { Pharmacy, PharmacyInventory } from '../../types';
+import { MedicineAvailability, Pharmacy } from '../../types';
 import { useTheme } from '../../theme';
 import { useRTL } from '../../i18n/RTLContext';
 import { Card } from '../ui/Card';
@@ -11,13 +11,13 @@ import { StatusBadge } from '../ui/StatusBadge';
 
 interface PharmacyCardProps {
   pharmacy: Pharmacy;
-  inventory?: PharmacyInventory;
+  availability?: MedicineAvailability;
   onPress?: () => void;
 }
 
 export const PharmacyCard: React.FC<PharmacyCardProps> = ({
   pharmacy,
-  inventory,
+  availability,
   onPress,
 }) => {
   const { colors, typography, spacing, radii } = useTheme();
@@ -31,8 +31,8 @@ export const PharmacyCard: React.FC<PharmacyCardProps> = ({
   };
 
   const getStockStatus = () => {
-    if (!inventory) return null;
-    if (inventory.is_available === true) {
+    if (!availability) return null;
+    if (availability.is_available === true) {
       return {
         label: t('pharmacy.available'),
         color: colors.success,
@@ -40,7 +40,7 @@ export const PharmacyCard: React.FC<PharmacyCardProps> = ({
         icon: 'checkmark-circle-outline' as const,
       };
     }
-    if (inventory.is_available === false) {
+    if (availability.is_available === false) {
       return {
         label: t('pharmacy.unavailable'),
         color: colors.error,
@@ -95,9 +95,11 @@ export const PharmacyCard: React.FC<PharmacyCardProps> = ({
             bgColor={stockInfo.bgColor}
             icon={<Ionicons name={stockInfo.icon} size={14} color={stockInfo.color} />}
           />
-          {inventory?.medication_name && (
+          {availability && (
             <Text style={[typography.captionBold, { color: colors.textPrimary, marginHorizontal: 8 }]}>
-              {inventory.medication_name} • {inventory.dosage}
+              {availability.quantity != null
+                ? `${availability.quantity} ${t('pharmacy.unitsAvailable')}`
+                : t('pharmacy.stockStatus')}
             </Text>
           )}
         </View>
