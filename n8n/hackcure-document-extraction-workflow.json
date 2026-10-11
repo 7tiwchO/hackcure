@@ -1,0 +1,303 @@
+{
+  "name": "HackCure - Document Upload → Extract → Draft → Apply",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hackcure-upload",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Document Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "hackcure-upload"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate the two uploaded files from the webhook\nconst body = $json.body || $json;\nconst files = body.files || {};\n\n// Expect: rapport (doctor report) and ordonnance (prescription)\nconst rapport = files.rapport || body.rapport_base64;\nconst ordonnance = files.ordonnance || body.ordonnance_base64;\nconst patient_id = body.patient_id;\n\nif (!patient_id) {\n  throw new Error('patient_id is required');\n}\n\nif (!rapport && !ordonnance) {\n  throw new Error('At least one document is required: rapport (doctor report) or ordonnance (prescription)');\n}\n\nreturn [{\n  json: {\n    patient_id,\n    has_rapport: !!rapport,\n    has_ordonnance: !!ordonnance,\n    rapport_data: rapport || null,\n    ordonnance_data: ordonnance || null,\n    upload_timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input & Extract Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.has_rapport }}",
+                    "rightValue": true,
+                    "operator": { "type": "boolean", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Has Report"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.has_ordonnance }}",
+                    "rightValue": true,
+                    "operator": { "type": "boolean", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Has Prescription"
+            }
+          ]
+        }
+      },
+      "id": "route-documents",
+      "name": "Route by Document Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: `Tu es un assistant médical d'extraction de données intégré à l'application HackCure. Tu reçois le texte ou l'image d'un RAPPORT MÉDICAL (rapport du médecin).\\n\\nRéponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni balises markdown, en français, avec EXACTEMENT cette structure:\\n{\\n  \"motif_consultation\": \"string ou null\",\\n  \"diagnostic\": \"string ou null\",\\n  \"conclusion\": \"string ou null\",\\n  \"objectifs_traitement\": [\"string\"],\\n  \"precautions\": [\"string\"],\\n  \"medicaments\": [{\\n    \"nom\": \"string\",\\n    \"principe_actif\": \"string ou null\",\\n    \"posologie\": \"string\",\\n    \"forme\": \"string ou null\",\\n    \"frequence\": \"string ou null\",\\n    \"heures_prises\": [\"HH:MM\"],\\n    \"duree_jours\": number ou null,\\n    \"instructions\": \"string ou null\",\\n    \"avant_repas\": boolean ou null,\\n    \"quantite\": number ou null,\\n    \"confidence\": number (0.0 à 1.0)\\n  }],\\n  \"sport\": {\\n    \"recommande\": [\"string\"],\\n    \"a_eviter\": [\"string\"],\\n    \"frequence\": \"string ou null\",\\n    \"intensite\": \"string ou null\",\\n    \"duree\": \"string ou null\",\\n    \"restrictions\": [\"string\"],\\n    \"jours\": [\"string\"]\\n  },\\n  \"nutrition\": {\\n    \"a_privilegier\": [\"string\"],\\n    \"a_limiter\": [\"string\"],\\n    \"conseils\": \"string ou null\",\\n    \"regime_type\": \"string ou null\",\\n    \"hydratation_ml\": number ou null,\\n    \"calories_cible\": number ou null,\\n    \"repas\": {\"petit_dejeuner\": \"string\", \"dejeuner\": \"string\", \"diner\": \"string\"} ou null\\n  },\\n  \"alertes\": [\"string\"],\\n  \"dates_suivi\": [\"YYYY-MM-DD\"],\\n  \"resume_patient\": \"string\",\\n  \"confidence_scores\": {\"diagnostic\": 0.0-1.0, \"medicaments\": 0.0-1.0, \"sport\": 0.0-1.0, \"nutrition\": 0.0-1.0, \"global\": 0.0-1.0}\\n}\\n\\nRègles STRICTES:\\n- \"medicaments\": recopie UNIQUEMENT ceux écrits dans le rapport. N'en invente, n'en ajoute et n'en modifie JAMAIS.\\n- Chaque champ \"confidence\" indique ta certitude (1.0 = sûr, 0.5 = incertain, 0.0 = deviné).\\n- Sport et nutrition: conseils généraux, prudents, adaptés au diagnostic et aux antécédents du rapport.\\n- \"alertes\": signes d'urgence ou contre-indications à surveiller, ou liste vide.\\n- \"resume_patient\": explication simple et rassurante en 3-4 phrases, compréhensible par le patient.\\n- Si une information est absente du rapport, mets null, chaîne vide, ou liste vide. NE JAMAIS INVENTER.\\n- \"dates_suivi\": extrais les dates de rendez-vous de suivi mentionnées dans le rapport, au format YYYY-MM-DD.\\n- Supporte le français et l'arabe. Si le texte est en arabe, traduis les champs en français.`, messages: [{ role: 'user', content: $('Validate Input & Extract Files').item.json.rapport_data }] }) }}",
+        "options": {}
+      },
+      "id": "claude-extract-report",
+      "name": "Claude - Extract Doctor Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 140],
+      "credentials": {
+        "httpHeaderAuth": { "id": "anthropic-api-key", "name": "Anthropic API Key" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: `Tu es un assistant médical d'extraction d'ordonnances intégré à l'application HackCure. Tu reçois le texte ou l'image d'une ORDONNANCE MÉDICALE (prescription).\\n\\nRéponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni balises markdown, en français, avec EXACTEMENT cette structure:\\n{\\n  \"numero_ordonnance\": \"string ou null\",\\n  \"nom_medecin\": \"string ou null\",\\n  \"diagnostic\": \"string ou null\",\\n  \"notes\": \"string ou null\",\\n  \"date_debut\": \"YYYY-MM-DD ou null\",\\n  \"date_fin\": \"YYYY-MM-DD ou null\",\\n  \"medicaments\": [{\\n    \"nom\": \"string\",\\n    \"principe_actif\": \"string ou null\",\\n    \"posologie\": \"string\",\\n    \"forme\": \"comprimé|gélule|sirop|injection|crème|gouttes|inhalateur|autre ou null\",\\n    \"frequence\": \"string (ex: 2 fois par jour)\",\\n    \"heures_prises\": [\"HH:MM\"],\\n    \"duree_jours\": number ou null,\\n    \"date_debut\": \"YYYY-MM-DD ou null\",\\n    \"date_fin\": \"YYYY-MM-DD ou null\",\\n    \"instructions\": \"string ou null\",\\n    \"avant_repas\": boolean ou null,\\n    \"quantite\": number ou null,\\n    \"confidence\": number (0.0 à 1.0)\\n  }],\\n  \"confidence_scores\": {\"medicaments\": 0.0-1.0, \"dates\": 0.0-1.0, \"global\": 0.0-1.0}\\n}\\n\\nRègles STRICTES:\\n- Extrais CHAQUE médicament mentionné sur l'ordonnance avec sa posologie exacte.\\n- N'invente JAMAIS un médicament qui n'est pas écrit.\\n- Si l'heure de prise n'est pas précisée mais la fréquence l'est, propose des heures raisonnables (matin=08:00, midi=13:00, soir=20:00).\\n- Chaque champ \"confidence\" indique ta certitude de lecture (1.0 = parfaitement lisible, 0.5 = partiellement lisible, 0.0 = illisible/deviné).\\n- \"forme\": normalise en français parmi les valeurs acceptées.\\n- Supporte le français et l'arabe. Si le texte est en arabe, traduis les noms de médicaments en leur DCI française.\\n- Si une information est absente, mets null. NE JAMAIS INVENTER.`, messages: [{ role: 'user', content: $('Validate Input & Extract Files').item.json.ordonnance_data }] }) }}",
+        "options": {}
+      },
+      "id": "claude-extract-prescription",
+      "name": "Claude - Extract Prescription",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 460],
+      "credentials": {
+        "httpHeaderAuth": { "id": "anthropic-api-key", "name": "Anthropic API Key" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude's report extraction response and validate\nconst raw = $json.content[0].text.replace(/```json|```/g, '').trim();\nlet data;\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  throw new Error('Failed to parse Claude report response as JSON: ' + e.message);\n}\n\nconst patient_id = $('Validate Input & Extract Files').item.json.patient_id;\n\n// Identify low-confidence fields\nconst lowConfidence = [];\nconst scores = data.confidence_scores || {};\nfor (const [field, score] of Object.entries(scores)) {\n  if (typeof score === 'number' && score < 0.7) {\n    lowConfidence.push(field);\n  }\n}\n\n// Check medication confidence\nif (data.medicaments) {\n  data.medicaments.forEach((med, idx) => {\n    if (med.confidence && med.confidence < 0.7) {\n      lowConfidence.push(`medicaments[${idx}].${med.nom}`);\n    }\n  });\n}\n\nreturn [{\n  json: {\n    patient_id,\n    document_type: 'DOCTOR_REPORT',\n    extraction: data,\n    low_confidence_fields: lowConfidence,\n    confidence_scores: scores,\n    is_valid: true\n  }\n}];"
+      },
+      "id": "parse-report",
+      "name": "Parse & Validate Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude's prescription extraction response and validate\nconst raw = $json.content[0].text.replace(/```json|```/g, '').trim();\nlet data;\ntry {\n  data = JSON.parse(raw);\n} catch (e) {\n  throw new Error('Failed to parse Claude prescription response as JSON: ' + e.message);\n}\n\nconst patient_id = $('Validate Input & Extract Files').item.json.patient_id;\n\n// Sanity checks\nconst warnings = [];\nif (!data.medicaments || data.medicaments.length === 0) {\n  warnings.push('No medications extracted from prescription');\n}\n\n// Dose sanity: check frequencies and times\nif (data.medicaments) {\n  data.medicaments.forEach((med, idx) => {\n    if (!med.posologie) {\n      warnings.push(`Medication ${med.nom}: missing posologie`);\n    }\n    if (!med.heures_prises || med.heures_prises.length === 0) {\n      // Auto-assign based on frequency\n      const freq = (med.frequence || '').toLowerCase();\n      if (freq.includes('1') || freq.includes('une')) {\n        med.heures_prises = ['08:00'];\n      } else if (freq.includes('2') || freq.includes('deux')) {\n        med.heures_prises = ['08:00', '20:00'];\n      } else if (freq.includes('3') || freq.includes('trois')) {\n        med.heures_prises = ['08:00', '13:00', '20:00'];\n      } else {\n        med.heures_prises = ['08:00'];\n      }\n      warnings.push(`Medication ${med.nom}: times auto-assigned to ${med.heures_prises.join(', ')}`);\n    }\n  });\n}\n\nconst lowConfidence = [];\nconst scores = data.confidence_scores || {};\nfor (const [field, score] of Object.entries(scores)) {\n  if (typeof score === 'number' && score < 0.7) {\n    lowConfidence.push(field);\n  }\n}\n\ndata.medicaments?.forEach((med, idx) => {\n  if (med.confidence && med.confidence < 0.7) {\n    lowConfidence.push(`medicaments[${idx}].${med.nom}`);\n  }\n});\n\nreturn [{\n  json: {\n    patient_id,\n    document_type: 'PRESCRIPTION',\n    extraction: data,\n    low_confidence_fields: lowConfidence,\n    confidence_scores: scores,\n    warnings,\n    is_valid: data.medicaments && data.medicaments.length > 0\n  }\n}];"
+      },
+      "id": "parse-prescription",
+      "name": "Parse & Validate Prescription",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HACKCURE_API_URL || 'http://localhost:8000' }}/api/automation/report",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Automation-Key", "value": "={{ $env.HACKCURE_AUTOMATION_KEY || 'hackcure-automation-dev-key-2026' }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ patient_id: $json.patient_id, motif_consultation: $json.extraction.motif_consultation, diagnostic: $json.extraction.diagnostic, conclusion: $json.extraction.conclusion, objectifs_traitement: $json.extraction.objectifs_traitement || [], precautions: $json.extraction.precautions || [], alertes: $json.extraction.alertes || [], dates_suivi: $json.extraction.dates_suivi || [], sport: $json.extraction.sport, nutrition: $json.extraction.nutrition, medicaments: $json.extraction.medicaments || [], resume_patient: $json.extraction.resume_patient, confidence_scores: $json.extraction.confidence_scores, texte_brut: $json.extraction.texte_brut || null }) }}",
+        "options": {}
+      },
+      "id": "save-report-draft",
+      "name": "Save Report as Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 140]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HACKCURE_API_URL || 'http://localhost:8000' }}/api/automation/prescription",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Automation-Key", "value": "={{ $env.HACKCURE_AUTOMATION_KEY || 'hackcure-automation-dev-key-2026' }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ patient_id: $json.patient_id, prescription_number: $json.extraction.numero_ordonnance, doctor_name: $json.extraction.nom_medecin, diagnosis: $json.extraction.diagnostic, notes: $json.extraction.notes, date_debut: $json.extraction.date_debut, date_fin: $json.extraction.date_fin, medicaments: $json.extraction.medicaments || [], confidence_scores: $json.extraction.confidence_scores }) }}",
+        "options": {}
+      },
+      "id": "save-prescription-draft",
+      "name": "Save Prescription as Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge results from both draft saves (report and/or prescription)\nconst items = $input.all();\nconst results = {\n  drafts: [],\n  low_confidence_fields: [],\n  warnings: [],\n  patient_id: $('Validate Input & Extract Files').item.json.patient_id,\n  requires_review: false,\n  avertissement: 'Ces données extraites sont un BROUILLON. Veuillez les vérifier avant de les appliquer. Cette application ne remplace pas l\\'avis de votre médecin.'\n};\n\nfor (const item of items) {\n  const d = item.json;\n  if (d.document_source_id) {\n    results.drafts.push({\n      document_source_id: d.document_source_id,\n      document_type: d.document_type,\n      status: d.status,\n      version: d.version\n    });\n  }\n  if (d.low_confidence_fields && d.low_confidence_fields.length > 0) {\n    results.low_confidence_fields.push(...d.low_confidence_fields);\n    results.requires_review = true;\n  }\n  if (d.warnings) {\n    results.warnings.push(...(Array.isArray(d.warnings) ? d.warnings : []));\n  }\n}\n\nreturn [{ json: results }];"
+      },
+      "id": "merge-drafts",
+      "name": "Merge Draft Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1580, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Return Draft Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1840, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hackcure-apply",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "apply-webhook",
+      "name": "Apply Confirmed Draft Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 700],
+      "webhookId": "hackcure-apply"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.HACKCURE_API_URL || 'http://localhost:8000' }}/api/automation/apply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Automation-Key", "value": "={{ $env.HACKCURE_AUTOMATION_KEY || 'hackcure-automation-dev-key-2026' }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_source_ids: $json.body.document_source_ids || [], confirmed_by: $json.body.confirmed_by || 'patient' }) }}",
+        "options": {}
+      },
+      "id": "call-apply-endpoint",
+      "name": "Apply Drafts to Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ...$json, avertissement: 'Traitement mis à jour avec succès. Les rappels de médicaments ont été reconfigurés. Cette application ne remplace pas l\\'avis de votre médecin.' }) }}",
+        "options": {}
+      },
+      "id": "respond-apply",
+      "name": "Return Apply Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [600, 700]
+    }
+  ],
+  "connections": {
+    "Document Upload Webhook": {
+      "main": [[{ "node": "Validate Input & Extract Files", "type": "main", "index": 0 }]]
+    },
+    "Validate Input & Extract Files": {
+      "main": [[{ "node": "Route by Document Type", "type": "main", "index": 0 }]]
+    },
+    "Route by Document Type": {
+      "main": [
+        [{ "node": "Claude - Extract Doctor Report", "type": "main", "index": 0 }],
+        [{ "node": "Claude - Extract Prescription", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude - Extract Doctor Report": {
+      "main": [[{ "node": "Parse & Validate Report", "type": "main", "index": 0 }]]
+    },
+    "Claude - Extract Prescription": {
+      "main": [[{ "node": "Parse & Validate Prescription", "type": "main", "index": 0 }]]
+    },
+    "Parse & Validate Report": {
+      "main": [[{ "node": "Save Report as Draft", "type": "main", "index": 0 }]]
+    },
+    "Parse & Validate Prescription": {
+      "main": [[{ "node": "Save Prescription as Draft", "type": "main", "index": 0 }]]
+    },
+    "Save Report as Draft": {
+      "main": [[{ "node": "Merge Draft Results", "type": "main", "index": 0 }]]
+    },
+    "Save Prescription as Draft": {
+      "main": [[{ "node": "Merge Draft Results", "type": "main", "index": 0 }]]
+    },
+    "Merge Draft Results": {
+      "main": [[{ "node": "Return Draft Response", "type": "main", "index": 0 }]]
+    },
+    "Apply Confirmed Draft Webhook": {
+      "main": [[{ "node": "Apply Drafts to Patient", "type": "main", "index": 0 }]]
+    },
+    "Apply Drafts to Patient": {
+      "main": [[{ "node": "Return Apply Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

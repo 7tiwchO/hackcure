@@ -1,0 +1,12 @@
+{
+  "name": "HackCure Daily Wellbeing Check-in",
+  "nodes": [
+    {"parameters": {"rule": {"interval": [{"field": "days", "daysInterval": 1}]}}, "id": "daily-checkin-schedule", "name": "Daily Schedule", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [240, 300]},
+    {"parameters": {"method": "POST", "url": "={{ $env.HACKCURE_API_URL + '/api/v1/chat/internal/daily-check-in' }}", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "X-HackCure-Secret", "value": "={{ $env.HACKCURE_CHAT_SHARED_SECRET }}"}]}, "options": {"timeout": 5000}}, "id": "queue-checkins", "name": "Create Consent-Gated Check-ins", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [500, 300]}],
+  "connections": {"Daily Schedule": {"main": [[{"node": "Create Consent-Gated Check-ins", "type": "main", "index": 0}]]}},
+  "settings": {"executionOrder": "v1", "saveDataErrorExecution": "none", "saveDataSuccessExecution": "none", "saveManualExecutions": false, "saveExecutionProgress": false},
+  "active": false,
+  "versionId": "",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}

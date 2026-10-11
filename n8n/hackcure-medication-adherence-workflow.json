@@ -1,0 +1,313 @@
+{
+  "name": "HackCure - Clinical Adherence & Dose Escalation Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "node-schedule-trigger",
+      "name": "Every 15 Minutes Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v1/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"username\": \"mohamedallagui22@gmail.com\",\n  \"password\": \"Test123!@#\"\n}"
+      },
+      "id": "node-auth-login",
+      "name": "HackCure Auth Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:8000/api/v1/patients/me/doses/today",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        }
+      },
+      "id": "node-fetch-doses",
+      "name": "Fetch Today's Doses",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const doses = $input.all();\nconst now = new Date();\nconst currentMinutes = now.getHours() * 60 + now.getMinutes();\n\nconst pendingAlerts = [];\n\nfor (const item of doses) {\n  const dose = item.json;\n  // Filter for unconfirmed doses\n  if (dose.status === 'DUE' || dose.status === 'SCHEDULED' || dose.status === 'REMINDING') {\n    const [hrs, mins] = dose.scheduled_time.split(':').map(Number);\n    const doseScheduledMinutes = hrs * 60 + mins;\n    const diffMinutes = currentMinutes - doseScheduledMinutes;\n\n    let escalationTier = 0;\n    let actionRequired = 'none';\n\n    if (diffMinutes >= 0 && diffMinutes < 45) {\n      escalationTier = 1; // Soft reminder\n      actionRequired = 'in_app_reminder';\n    } else if (diffMinutes >= 45 && diffMinutes < 120) {\n      escalationTier = 2; // Urgent dose reminder\n      actionRequired = 'urgent_sms_push';\n    } else if (diffMinutes >= 120) {\n      escalationTier = 3; // Severe missed dose - notify clinical team\n      actionRequired = 'doctor_escalation';\n    }\n\n    if (escalationTier > 0) {\n      pendingAlerts.push({\n        json: {\n          dose_id: dose.id,\n          medication_name: dose.prescription_item?.medication_name || 'Medication',\n          dosage: dose.prescription_item?.dosage || '',\n          scheduled_time: dose.scheduled_time,\n          diffMinutes,\n          escalationTier,\n          actionRequired,\n          patient_email: 'mohamedallagui22@gmail.com'\n        }\n      });\n    }\n  }\n}\n\nreturn pendingAlerts.length > 0 ? pendingAlerts : [{ json: { status: 'no_overdue_doses' } }];"
+      },
+      "id": "node-clinical-decision-engine",
+      "name": "Clinical Escalation Matrix",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.escalationTier }}",
+                    "rightValue": 1,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Tier 1: In-App Reminder"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.escalationTier }}",
+                    "rightValue": 2,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Tier 2: Urgent Push / SMS"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.escalationTier }}",
+                    "rightValue": 3,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Tier 3: Doctor Escalation"
+            }
+          ]
+        }
+      },
+      "id": "node-switch-router",
+      "name": "Route by Escalation Tier",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v1/notifications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('HackCure Auth Token').item.json.access_token ? 'Bearer ' + $('HackCure Auth Token').item.json.access_token : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"title\": \"Medication Reminder: \" + $json.medication_name,\n  \"body\": \"Your scheduled dose of \" + $json.medication_name + \" (\" + $json.dosage + \") is due at \" + $json.scheduled_time + \". Please confirm intake.\",\n  \"category\": \"MEDICATION\",\n  \"priority\": \"HIGH\"\n}"
+      },
+      "id": "node-send-tier1-notification",
+      "name": "Dispatch Gentle Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v1/notifications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('HackCure Auth Token').item.json.access_token ? 'Bearer ' + $('HackCure Auth Token').item.json.access_token : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"title\": \"URGENT: Dose Overdue - \" + $json.medication_name,\n  \"body\": \"Dose was scheduled at \" + $json.scheduled_time + \" and is now \" + $json.diffMinutes + \" minutes late. Tap HackCure immediately to log your intake.\",\n  \"category\": \"MEDICATION\",\n  \"priority\": \"URGENT\"\n}"
+      },
+      "id": "node-send-tier2-urgent",
+      "name": "Dispatch Urgent Push Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v1/notifications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $('HackCure Auth Token').item.json.access_token ? 'Bearer ' + $('HackCure Auth Token').item.json.access_token : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"title\": \"CLINICAL ESCALATION: Missed Dose Alert\",\n  \"body\": \"Patient \" + $json.patient_email + \" has not logged \" + $json.medication_name + \" (\" + $json.diffMinutes + \" min overdue). Care team notified.\",\n  \"category\": \"DOCTOR\",\n  \"priority\": \"URGENT\"\n}"
+      },
+      "id": "node-send-tier3-doctor",
+      "name": "Escalate to Care Team",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        460
+      ]
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes Trigger": {
+      "main": [
+        [
+          {
+            "node": "HackCure Auth Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HackCure Auth Token": {
+      "main": [
+        [
+          {
+            "node": "Fetch Today's Doses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Today's Doses": {
+      "main": [
+        [
+          {
+            "node": "Clinical Escalation Matrix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinical Escalation Matrix": {
+      "main": [
+        [
+          {
+            "node": "Route by Escalation Tier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Escalation Tier": {
+      "main": [
+        [
+          {
+            "node": "Dispatch Gentle Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dispatch Urgent Push Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escalate to Care Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

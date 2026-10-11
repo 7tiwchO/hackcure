@@ -1,0 +1,13 @@
+{
+  "name": "HackCure Weekly Consent-Gated Mood Summary",
+  "nodes": [
+    {"parameters": {"rule": {"interval": [{"field": "weeks", "weeksInterval": 1}]}}, "id": "weekly-mood-schedule", "name": "Weekly Schedule", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [240, 300]},
+    {"parameters": {"method": "POST", "url": "={{ $env.HACKCURE_API_URL + '/api/v1/chat/internal/weekly-mood-summary' }}", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "X-HackCure-Secret", "value": "={{ $env.HACKCURE_CHAT_SHARED_SECRET }}"}]}, "options": {"timeout": 5000}}, "id": "fetch-mood-summaries", "name": "Fetch Opted-In Summaries", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [500, 300]},
+    {"parameters": {"method": "POST", "url": "={{ $env.HACKCURE_CARE_TEAM_SUMMARY_URL }}", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "X-HackCure-Secret", "value": "={{ $env.HACKCURE_CARE_TEAM_SECRET }}"}]}, "sendBody": true, "specifyBody": "json", "jsonBody": "={{ $json }}", "options": {"timeout": 5000}}, "id": "deliver-mood-summaries", "name": "Send to Configured Care Team", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [760, 300]}],
+  "connections": {"Weekly Schedule": {"main": [[{"node": "Fetch Opted-In Summaries", "type": "main", "index": 0}]]}, "Fetch Opted-In Summaries": {"main": [[{"node": "Send to Configured Care Team", "type": "main", "index": 0}]]}},
+  "settings": {"executionOrder": "v1", "saveDataErrorExecution": "none", "saveDataSuccessExecution": "none", "saveManualExecutions": false, "saveExecutionProgress": false},
+  "active": false,
+  "versionId": "",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}

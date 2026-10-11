@@ -1,0 +1,28 @@
+# Local secrets and databases
+.env
+.env.*
+!.env.example
+backend/.env
+backend/hackcure.db
+backend/hackcure.db-*
+backend/*.db
+backend/*.db-*
+backend/uvicorn.local.*
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Expo / Node
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+
+# OS/editor files
+.DS_Store
+Thumbs.db

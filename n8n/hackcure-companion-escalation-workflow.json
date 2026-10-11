@@ -1,0 +1,12 @@
+{
+  "name": "HackCure Companion Crisis Escalation",
+  "nodes": [
+    {"parameters": {"httpMethod": "POST", "path": "hackcure-companion-escalation", "responseMode": "onReceived", "options": {}}, "id": "companion-escalation-webhook", "name": "Escalation Webhook", "type": "n8n-nodes-base.webhook", "typeVersion": 2, "position": [240, 300], "webhookId": "hackcure-companion-escalation"},
+    {"parameters": {"method": "POST", "url": "={{ $env.HACKCURE_ESCALATION_URL }}", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "X-HackCure-Secret", "value": "={{ $env.HACKCURE_ESCALATION_SECRET }}"}]}, "sendBody": true, "specifyBody": "json", "jsonBody": "={{ { patient_ref: $json.body.patient_id, category: $json.body.category, event: 'patient_companion_safety_alert' } }}", "options": {"timeout": 5000}}, "id": "notify-care-contact", "name": "Notify Configured Care Contact", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [500, 300]}],
+  "connections": {"Escalation Webhook": {"main": [[{"node": "Notify Configured Care Contact", "type": "main", "index": 0}]]}},
+  "settings": {"executionOrder": "v1", "saveDataErrorExecution": "none", "saveDataSuccessExecution": "none", "saveManualExecutions": false, "saveExecutionProgress": false},
+  "active": false,
+  "versionId": "",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}
